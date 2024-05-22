@@ -1,0 +1,212 @@
+# Load required packages and install if not present
+packages <- c("rugarch", "tidyverse", "lmtest", "ggplot2", "numDeriv")
+sapply(packages, function(p) {
+    if (!require(p, character.only = TRUE)) {
+        install.packages(p)
+        library(p, character.only = TRUE)
+    }
+})
+
+# Load the dataset
+file_path <- "/kaggle/input/final-merged-dataset/TSLA_merged_data (1).csv"
+data <- read.csv(file_path, stringsAsFactors = FALSE)
+
+# Ensure 'Date' is in Date format
+data$Date <- as.Date(data$Date, format = "%Y-%m-%d")
+
+# Time-based split for training and testing sets
+split_date <- as.Date("2019-01-01")
+train_data <- data[data$Date < split_date, ]
+test_data <- data[data$Date >= split_date, ]
+
+# GARCH model specification and fitting
+spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                   mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+                   distribution.model = "norm")
+garch_fit <- ugarchfit(spec = spec, data = train_data$Excess_Return)
+
+# Update train and test data volatility using the model fit
+train_data$Volatility <- as.numeric(sigma(garch_fit))
+test_data$Volatility <- as.numeric(ugarchforecast(garch_fit, n.ahead = nrow(test_data))@forecast$sigmaFor)
+
+# Subsetting train_data and test_data
+train_data <- train_data[21:nrow(train_data), ]
+test_data <- test_data[21:nrow(test_data), ]
+
+# Selecting the features and target variable for training and testing
+features <- c("RSI", "Volatility", "Avg_Volume")
+target <- "Excess_Return"
+# Apply transformations
+train_data[,"Rolling.Sentiment"] <- scale(train_data[,"Rolling.Sentiment"])
+test_data[,"Rolling.Sentiment"] <- scale(test_data[,"Rolling.Sentiment"])
+
+# Create interaction terms
+train_data[,"Rolling_Sentiment_Avg_Volume"] <- train_data[,"Rolling.Sentiment"] * train_data[,"Avg_Volume"]
+test_data[,"Rolling_Sentiment_Avg_Volume"] <- test_data[,"Rolling.Sentiment"] * test_data[,"Avg_Volume"]
+
+# Update features
+features <- c(features, "Rolling_Sentiment_Avg_Volume")
+
+X_train <- train_data[, features]
+y_train <- train_data[, target]
+X_test <- test_data[, features]
+y_test <- test_data[, target]
+
+# Standardize features
+standardize_features <- function(data) {
+  return(scale(data))
+}
+
+X_train <- standardize_features(X_train)
+X_test <- standardize_features(X_test)
+
+# Fit the linear regression model with the training data
+train_data_standardized <- cbind(as.data.frame(X_train), Excess_Return = y_train)
+model <- lm(Excess_Return ~ ., data = train_data_standardized)
+
+# Feature Importance Calculation: Magnitude of Coefficients Method
+feature_importance <- abs(coef(model)[-1])  # Exclude intercept
+names(feature_importance) <- names(coef(model)[-1])
+print(feature_importance)
+
+# Predictions on test data
+predictions <- predict(model, newdata = as.data.frame(X_test))
+
+# Evaluation metrics
+rss <- sum((y_test - predictions)^2)
+tss <- sum((y_test)^2)
+R2 <- 1 - rss / tss
+n <- nrow(test_data)
+p <- length(features)  # Number of predictors/features used in the model
+R2_adj <- 1 - (1 - R2) * (n - 1) / (n - p - 1)
+
+cat("Out-of-Sample R-squared:", R2, "\n")
+cat("Adjusted R-squared:", R2_adj, "\n")
+cat("Correlation:", cor(predictions, y_test, use = "complete.obs"), "\n")
+cat("RMSE:", sqrt(mean((predictions - y_test)^2)), "\n")
+cat("MSE:", mean((predictions - y_test)^2), "\n")
+
+# Plotting Actual vs Predicted Excess Returns over Time
+test_data$Predicted_Return <- predictions
+plot_actual_vs_predicted <- ggplot(test_data, aes(x = Date)) +
+  geom_line(aes(y = Excess_Return, group = 1, colour = "Actual")) +
+  geom_line(aes(y = Predicted_Return, group = 1, colour = "Predicted")) +
+  labs(title = "Actual vs Predicted Excess Returns Over Time",
+       x = "Date", y = "Excess Return") +
+  theme_minimal() +
+  scale_colour_manual(values = c("Actual" = "blue", "Predicted" = "red"))
+
+# Prepare prediction data and omit NAs for plotting OLS Prediction
+prediction_data <- data.frame(predictions = predictions, Excess_Return = y_test)
+prediction_data <- na.omit(prediction_data)
+
+# Plotting OLS Prediction of Excess Returns with feature importance
+plot_ols_prediction <- ggplot(prediction_data, aes(x = predictions, y = Excess_Return)) +
+  geom_point(color = "red") +
+  geom_smooth(method = "lm", se = FALSE, color = "blue", formula = y ~ x) +
+  labs(x = "Predicted Excess Returns", y = "Actual Excess Returns", title = "OLS Prediction of Excess Returns with Feature Importance")
+
+# Display both plots
+print(plot_actual_vs_predicted)
+print(plot_ols_prediction)
+
+# Load required packages and install if not present
+packages <- c("rugarch", "tidyverse", "lmtest", "ggplot2", "numDeriv")
+sapply(packages, function(p) {
+    if (!require(p, character.only = TRUE)) {
+        install.packages(p)
+        library(p, character.only = TRUE)
+    }
+})
+
+# Load the dataset
+file_path <- "/kaggle/input/final-merged-dataset/TSLA_merged_data (1).csv"
+data <- read.csv(file_path, stringsAsFactors = FALSE)
+
+# Ensure 'Date' is in Date format
+data$Date <- as.Date(data$Date, format = "%Y-%m-%d")
+
+# Time-based split for training and testing sets
+split_date <- as.Date("2019-01-01")
+train_data <- data[data$Date < split_date, ]
+test_data <- data[data$Date >= split_date, ]
+
+# GARCH model specification and fitting
+spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                   mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+                   distribution.model = "norm")
+garch_fit <- ugarchfit(spec = spec, data = train_data$Excess_Return)
+
+# Update train and test data volatility using the model fit
+train_data$Volatility <- as.numeric(sigma(garch_fit))
+test_data$Volatility <- as.numeric(ugarchforecast(garch_fit, n.ahead = nrow(test_data))@forecast$sigmaFor)
+
+# Subsetting train_data and test_data
+train_data <- train_data[21:nrow(train_data), ]
+test_data <- test_data[21:nrow(test_data), ]
+
+# Selecting the features and target variable for training and testing
+features <- c( "RSI", "Volatility", "Avg_Volume")
+target <- "Excess_Return"
+
+X_train <- train_data[, features]
+y_train <- train_data[, target]
+X_test <- test_data[, features]
+y_test <- test_data[, target]
+
+# Standardize features
+standardize_features <- function(data) {
+  return(scale(data))
+}
+
+X_train <- standardize_features(X_train)
+X_test <- standardize_features(X_test)
+
+# Fit the linear regression model with the training data
+train_data_standardized <- cbind(as.data.frame(X_train), Excess_Return = y_train)
+model <- lm(Excess_Return ~ ., data = train_data_standardized)
+
+# Feature Importance Calculation: Magnitude of Coefficients Method
+feature_importance <- abs(coef(model)[-1])  # Exclude intercept
+names(feature_importance) <- names(coef(model)[-1])
+print(feature_importance)
+
+# Predictions on test data
+predictions <- predict(model, newdata = as.data.frame(X_test))
+
+# Evaluation metrics
+rss <- sum((y_test - predictions)^2)
+tss <- sum((y_test)^2)
+R2 <- 1 - rss / tss
+n <- nrow(test_data)
+p <- length(features)  # Number of predictors/features used in the model
+R2_adj <- 1 - (1 - R2) * (n - 1) / (n - p - 1)
+
+cat("Out-of-Sample R-squared:", R2, "\n")
+cat("Adjusted R-squared:", R2_adj, "\n")
+cat("Correlation:", cor(predictions, y_test, use = "complete.obs"), "\n")
+cat("RMSE:", sqrt(mean((predictions - y_test)^2)), "\n")
+cat("MSE:", mean((predictions - y_test)^2), "\n")
+
+# Plotting Actual vs Predicted Excess Returns over Time
+test_data$Predicted_Return <- predictions
+plot_actual_vs_predicted <- ggplot(test_data, aes(x = Date)) +
+  geom_line(aes(y = Excess_Return, group = 1, colour = "Actual")) +
+  geom_line(aes(y = Predicted_Return, group = 1, colour = "Predicted")) +
+  labs(title = "Actual vs Predicted Excess Returns Over Time",
+       x = "Date", y = "Excess Return") +
+  theme_minimal() +
+  scale_colour_manual(values = c("Actual" = "blue", "Predicted" = "red"))
+
+# Prepare prediction data and omit NAs for plotting OLS Prediction
+prediction_data <- data.frame(predictions = predictions, Excess_Return = y_test)
+prediction_data <- na.omit(prediction_data)
+
+# Plotting OLS Prediction of Excess Returns with feature importance
+plot_ols_prediction <- ggplot(prediction_data, aes(x = predictions, y = Excess_Return)) +
+  geom_point(color = "red") +
+  geom_smooth(method = "lm", se = FALSE, color = "blue", formula = y ~ x) +
+  labs(x = "Predicted Excess Returns", y = "Actual Excess Returns", title = "OLS Prediction of Excess Returns with Feature Importance")
+
+# Display both plots
+print(plot_actual_vs_predicted)
